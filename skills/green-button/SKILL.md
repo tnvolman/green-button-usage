@@ -18,7 +18,7 @@ The file is already on disk. Do not log in, do not fetch it, and do not send it 
 3. Call `list_usage_points` and keep delivered and received (solar export) on their own meters.
 4. Use `usage_summary` (`day`, `week`, or `month`), `peak_hours`, and `compare_periods` (`mom`, `yoy`, or two inclusive local dates).
 5. Call `estimate_cost` only with costs stored in the file or with a rate the user states. Say that the result is an estimate, not a bill.
-6. Call `export_normalized` only when the user wants a file, and only to a path they choose.
+6. Call `export_normalized` only when the user wants a file, and only to a path they choose. It will not replace an existing file unless `overwrite` is true.
 
 ## Rules
 
@@ -26,3 +26,4 @@ The file is already on disk. Do not log in, do not fetch it, and do not send it 
 - Default summaries are delivered energy. Pass `direction: "received"` for export and `direction: "net"` for delivered minus received.
 - CSV clock times without a `utc_offset` column are stored as UTC. Say so when `warnings` includes `csv-naive-time`.
 - Customer, address, and account fields are stripped. Do not repeat them even if the user can see them in the raw file.
+- A meter ID with 6 or more digits is masked in tool results (`****` plus the last 4 characters). Do not reconstruct or repeat the full meter ID from the file.

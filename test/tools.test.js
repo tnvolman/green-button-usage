@@ -213,6 +213,177 @@ test("month and year comparisons use complete local months and per-day totals", 
   assert.equal(yoy.periodB.days, 31);
 });
 
+test("account numbers in meter ids are masked to the last 4 characters", () => {
+  const fullId = "990000001234";
+  const xml = feed(
+    usagePoint(0) +
+      localTime(0) +
+      meter(fullId) +
+      readingType("RT", 1, 999, 0, 3600, 840) +
+      intervalBlock([
+        { start: unix("2024-01-15T00:00:00Z"), duration: 3600, value: 1000, cost: 100000 },
+        { start: unix("2024-01-16T00:00:00Z"), duration: 3600, value: 2000, cost: 200000 },
+      ])
+  );
+  assert.equal(xml.includes(fullId), true);
+  const loaded = loadGreenbutton({ xml_text: xml });
+  const listed = listUsagePoints({});
+  const byMask = usageSummary({ meterId: "****1234", granularity: "day" });
+  const byRaw = usageSummary({ meterId: fullId, granularity: "day" });
+  const peaks = peakHours({ meterId: "****1234", limit: 2 });
+  const compared = comparePeriods({
+    meterId: "****1234",
+    mode: "ranges",
+    periodA: { start: "2024-01-15", end: "2024-01-15" },
+    periodB: { start: "2024-01-16", end: "2024-01-16" },
+  });
+  const cost = estimateCost({ meterId: fullId });
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gb-mask-"));
+  const jsonPath = path.join(dir, "out.json");
+  const csvPath = path.join(dir, "out.csv");
+  const jsonExport = exportNormalized({ path: jsonPath, format: "json" });
+  const csvExport = exportNormalized({ path: csvPath, format: "csv" });
+  const jsonFile = fs.readFileSync(jsonPath, "utf8");
+  const csvFile = fs.readFileSync(csvPath, "utf8");
+  const outputs = [loaded, listed, byMask, byRaw, peaks, compared, cost, jsonExport, csvExport, jsonFile, csvFile];
+  const blob = JSON.stringify(outputs);
+  assert.equal(blob.includes(fullId), false);
+  assert.equal(loaded.meters[0].id, "****1234");
+  assert.equal(listed.usagePoints[0].meters[0].id, "****1234");
+  assert.equal(byMask.meterId, "****1234");
+  assert.equal(byRaw.meterId, "****1234");
+  assert.equal(byMask.overall.total, byRaw.overall.total);
+  assert.equal(peaks.meterId, "****1234");
+  assert.equal(peaks.topIntervals[0].meterId, "****1234");
+  assert.equal(compared.meterId, "****1234");
+  assert.equal(cost.meterId, "****1234");
+  assert.equal(jsonExport.path, jsonPath);
+  assert.equal(jsonFile.includes("****1234"), true);
+  assert.equal(csvFile.includes("****1234"), true);
+  const warning = loaded.warnings.find((item) => item.code === "unknown-uom");
+  assert.ok(warning);
+  assert.equal(warning.message.includes(fullId), false);
+  assert.equal(warning.message.includes("****1234"), true);
+});
+
+test("a meter id with a 6-digit account number is masked and a 5-digit id is not", () => {
+  const six = "654321";
+  const five = "12345";
+  const sixLoaded = loadGreenbutton({
+    xml_text: feed(
+      usagePoint(0) +
+        localTime(0) +
+        meter(six) +
+        readingType("RT", 1, 72, 0, 3600, 840) +
+        intervalBlock([{ start: unix("2024-03-01T00:00:00Z"), duration: 3600, value: 1000, cost: 100000 }])
+    ),
+  });
+  assert.equal(sixLoaded.meters[0].id, "****4321");
+  assert.equal(JSON.stringify(sixLoaded).includes(six), false);
+  clearStore();
+  const fiveLoaded = loadGreenbutton({
+    xml_text: feed(
+      usagePoint(0) +
+        localTime(0) +
+        meter(five) +
+        readingType("RT", 1, 72, 0, 3600, 840) +
+        intervalBlock([{ start: unix("2024-03-01T00:00:00Z"), duration: 3600, value: 1000, cost: 100000 }])
+    ),
+  });
+  assert.equal(fiveLoaded.meters[0].id, five);
+});
+
+test("a prefixed meter id and a CSV meter column do not leak the account number", () => {
+  const fullId = "METER-990000005678";
+  const loaded = loadGreenbutton({
+    xml_text: feed(
+      usagePoint(0) +
+        localTime(0) +
+        meter(fullId) +
+        readingType("RT", 1, 72, 0, 3600, 840) +
+        intervalBlock([{ start: unix("2024-04-02T12:00:00Z"), duration: 3600, value: 2500, cost: 50000 }])
+    ),
+  });
+  assert.equal(loaded.meters[0].id, "****5678");
+  assert.equal(JSON.stringify(loaded).includes(fullId), false);
+  assert.equal(JSON.stringify(loaded).includes("990000005678"), false);
+  clearStore();
+  const csvId = "990000001234";
+  const csv = loadGreenbutton({
+    csv_text: "Name,Synthetic Person\nAccount Number,ACCT-998877\n\nDate,Usage,Meter\n2024-07-01,1.25," + csvId + "\n",
+  });
+  const listed = listUsagePoints({});
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gb-mask-csv-"));
+  const jsonPath = path.join(dir, "out.json");
+  exportNormalized({ path: jsonPath, format: "json" });
+  const blob = JSON.stringify(csv) + JSON.stringify(listed) + fs.readFileSync(jsonPath, "utf8");
+  assert.equal(blob.includes(csvId), false);
+  assert.equal(blob.includes("ACCT-998877"), false);
+  assert.equal(blob.includes("Synthetic Person"), false);
+  assert.equal(csv.meters[0].id, "****1234");
+  assert.equal(listed.usagePoints[0].id.includes(csvId), false);
+  assert.equal(listed.usagePoints[0].meters[0].id, "****1234");
+});
+
+test("two meter ids that mask to the same value do not reveal either full id", () => {
+  const first = "111111111234";
+  const second = "222222221234";
+  const loaded = loadGreenbutton({
+    xml_text: feed(
+      usagePoint(0) +
+        localTime(0) +
+        meter(first) +
+        readingType("A", 1, 72, 0, 3600, 840) +
+        intervalBlock([{ start: unix("2024-07-01T19:00:00Z"), duration: 3600, value: 5000, cost: 100000 }]) +
+        meter(second) +
+        readingType("B", 1, 72, 0, 3600, 840) +
+        intervalBlock([{ start: unix("2024-07-01T20:00:00Z"), duration: 3600, value: 2000, cost: 20000 }])
+    ),
+  });
+  const blob = JSON.stringify(loaded);
+  assert.equal(blob.includes(first), false);
+  assert.equal(blob.includes(second), false);
+  assert.equal(loaded.meters.length, 2);
+  assert.deepEqual(
+    loaded.meters.map((meter) => meter.id),
+    ["****1234", "****1234"]
+  );
+  assert.throws(() => usageSummary({ meterId: "****1234", granularity: "day" }), (err) => {
+    assert.equal(String(err.message).includes(first), false);
+    assert.equal(String(err.message).includes(second), false);
+    assert.match(err.message, /More than one meter is returned as \*\*\*\*1234/);
+    return true;
+  });
+  const picked = usageSummary({ meterId: first, granularity: "day" });
+  const pickedBlob = JSON.stringify(picked);
+  assert.equal(pickedBlob.includes(first), false);
+  assert.equal(pickedBlob.includes(second), false);
+  assert.equal(picked.meterId, "****1234");
+  assert.equal(picked.overall.total, 5);
+});
+
+test("export_normalized refuses to overwrite an existing file unless overwrite is true", () => {
+  loadGreenbutton({ xml_text: twoDayFile() });
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gb-overwrite-"));
+  const target = path.join(dir, "out.json");
+  fs.writeFileSync(target, "original");
+  assert.throws(() => exportNormalized({ path: target, format: "json" }), /overwrite: true/);
+  assert.equal(fs.readFileSync(target, "utf8"), "original");
+  assert.throws(() => exportNormalized({ path: target, format: "json", overwrite: false }), /overwrite: true/);
+  assert.throws(() => exportNormalized({ path: target, format: "json", overwrite: "true" }), /overwrite: true/);
+  assert.equal(fs.readFileSync(target, "utf8"), "original");
+  const replaced = exportNormalized({ path: target, format: "json", overwrite: true });
+  const body = fs.readFileSync(target, "utf8");
+  assert.equal(replaced.path, target);
+  assert.notEqual(body, "original");
+  assert.equal(body.includes("HOUSE"), true);
+  assert.equal(body.includes("original"), false);
+  const fresh = path.join(dir, "fresh.csv");
+  const created = exportNormalized({ path: fresh, format: "csv" });
+  assert.equal(created.format, "csv");
+  assert.equal(fs.readFileSync(fresh, "utf8").includes("HOUSE"), true);
+});
+
 test("load rejects a zip and does not write during load", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gb-zip-"));
   const zipPath = path.join(dir, "data.zip");

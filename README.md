@@ -1,12 +1,12 @@
-# Green Button usage (v0.1)
+# Green Button usage
 
-A local Cursor Agent Plugin that reads a Green Button file you downloaded and summarizes home electric, gas, or water use. It is a zero-dependency Node process. It speaks MCP over stdio. It does not log in, and it does not make network calls.
+A local Cursor plugin that reads a Green Button file you already downloaded and summarizes electric, gas, or water use on your machine, with no login and no network calls.
 
-v0.1 is download-file only. There is no OAuth, no Green Button Connect, and no Share My Data.
+Version 0.1 reads a file from disk. It does not use OAuth, Green Button Connect, or Share My Data.
 
 ## Install
 
-Node.js 18 or newer. Nothing to install with npm.
+Node.js 18 or newer. There is no `package.json` and nothing to install with npm. The server is a zero-dependency Node process and speaks MCP over stdio.
 
 ```bash
 git clone https://github.com/tnvolman/green-button-usage
@@ -14,11 +14,24 @@ cd green-button-usage
 node scripts/prove.js
 ```
 
-`scripts/prove.js` runs the `node --test` suite. The server is `server/greenbutton-mcp.js`.
+`node scripts/prove.js` runs the `node --test` suite. The server is `server/greenbutton-mcp.js`.
 
-Cursor loads this repo as an Agent Plugin (`plugin.json` and `mcp.json`). The MCP entry starts the server with `node` over stdio. `mcp.json` uses `${CURSOR_PLUGIN_ROOT}` because Cursor does not expand the Agent Plugins `${PLUGIN_ROOT}` variable (checked against the Cursor plugin reference on 2026-10-23).
+Cursor loads this directory as an Agent Plugin. [`plugin.json`](plugin.json) is the manifest (`green-button` 0.1.0). [`mcp.json`](mcp.json) starts the server with `node` over stdio:
 
-To attach it by hand:
+```json
+{
+  "mcpServers": {
+    "green-button": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["${CURSOR_PLUGIN_ROOT}/server/greenbutton-mcp.js"],
+      "cwd": "${CURSOR_PLUGIN_ROOT}"
+    }
+  }
+}
+```
+
+To attach the same server by hand:
 
 ```json
 {
@@ -31,22 +44,135 @@ To attach it by hand:
 }
 ```
 
-Then ask the agent to load your file with `load_greenbutton`.
+Download the Green Button file from your utility yourself (often labeled Download My Data). Unzip a `.zip` first. This plugin never logs in and never fetches the file.
 
-## Download your Green Button file
+## Example
 
-Sign in on the utility site and download the file yourself. This plugin never does that for you. Links below were fetched on 2026-10-23.
+These two calls were run on the synthetic fixture `samples/electric-hourly.xml`. It is not a customer's data. July's `startUtc` is `07:00Z` and January's is `08:00Z` because the fixture's `LocalTimeParameters` are Pacific time with daylight saving.
 
-| Utility | Page | Verified |
-| --- | --- | --- |
-| PG&E | [Energy usage tools](https://www.pge.com/en/save-energy-and-money/energy-usage-and-tips/understand-my-usage.html) | Yes. The page says: sign in, open Usage and rates, View Usage Details, then Green Button Download My Data. |
-| SCE | [Energy Management Center](https://www.sce.com/clean-energy-efficiency/home/energy-management-center) | Yes. The page describes Green Button Download on SCE.com for hourly and daily usage. It does not list the clicks inside the account. |
-| Con Edison | [Download your energy data](https://www.coned.com/en/save-money/make-better-energychoices-with-green-button) | Yes. The page says Download My Data can return up to one year as CSV or XML. |
-| SDG&E | [Download My Green Button Data](https://www.sdge.com/green-button/download-my-green-button-data) | Yes. The page says: My Energy Center, Usage, Electric or Gas, Green Button Download, then date range and format. |
+`load_greenbutton` arguments:
 
-Unzip a `.zip` download first. This version does not open zip files.
+```json
+{
+  "path": "samples/electric-hourly.xml"
+}
+```
 
-## What the tools do
+`load_greenbutton` result:
+
+```json
+{
+  "fileId": "gb_35b2fc67d5be",
+  "format": "espi",
+  "meters": [
+    {
+      "id": "DELIVERED",
+      "usagePointId": "ELECTRIC-1",
+      "kind": "electric",
+      "unit": "kWh",
+      "intervalSec": 3600,
+      "tz": {
+        "tzOffset": -28800,
+        "dstOffset": 3600,
+        "dstStartRule": "360E2000",
+        "dstEndRule": "B40E2000"
+      },
+      "direction": "delivered",
+      "readingCount": 9528
+    },
+    {
+      "id": "RECEIVED",
+      "usagePointId": "ELECTRIC-1",
+      "kind": "electric",
+      "unit": "kWh",
+      "intervalSec": 3600,
+      "tz": {
+        "tzOffset": -28800,
+        "dstOffset": 3600,
+        "dstStartRule": "360E2000",
+        "dstEndRule": "B40E2000"
+      },
+      "direction": "received",
+      "readingCount": 3970
+    }
+  ],
+  "dateRange": {
+    "startUtc": "2024-01-01T08:00:00Z",
+    "endUtc": "2025-02-01T08:00:00Z"
+  },
+  "units": [
+    "kWh"
+  ],
+  "readingCount": 13498,
+  "billPeriodCount": 13,
+  "warnings": [
+    {
+      "code": "stripped-customer-fields",
+      "message": "Customer, address, and account elements were dropped and are not in the result."
+    }
+  ],
+  "privacy": "In memory for this session only. Customer, address, and account fields are not included. A meter ID with 6 or more digits is returned as **** plus its last 4 characters."
+}
+```
+
+`compare_periods` arguments:
+
+```json
+{
+  "fileId": "gb_35b2fc67d5be",
+  "meterId": "DELIVERED",
+  "mode": "ranges",
+  "periodA": { "start": "2024-07-01", "end": "2024-07-31" },
+  "periodB": { "start": "2024-01-01", "end": "2024-01-31" }
+}
+```
+
+`compare_periods` result:
+
+```json
+{
+  "fileId": "gb_35b2fc67d5be",
+  "meterId": "DELIVERED",
+  "mode": "ranges",
+  "direction": "delivered",
+  "note": null,
+  "unit": "kWh",
+  "periodA": {
+    "label": "2024-07-01..2024-07-31",
+    "startLocal": "2024-07-01",
+    "endLocal": "2024-07-31",
+    "startUtc": "2024-07-01T07:00:00Z",
+    "endUtc": "2024-08-01T07:00:00Z",
+    "days": 31,
+    "daysWithData": 31,
+    "total": 437.658,
+    "perDay": 14.118,
+    "intervalCount": 744
+  },
+  "periodB": {
+    "label": "2024-01-01..2024-01-31",
+    "startLocal": "2024-01-01",
+    "endLocal": "2024-01-31",
+    "startUtc": "2024-01-01T08:00:00Z",
+    "endUtc": "2024-02-01T08:00:00Z",
+    "days": 31,
+    "daysWithData": 31,
+    "total": 313.658,
+    "perDay": 10.118,
+    "intervalCount": 744
+  },
+  "delta": {
+    "total": 124,
+    "perDay": 4,
+    "percentTotal": 39.533505,
+    "percentPerDay": 39.533505
+  },
+  "normalization": "perDay divides the period total by the number of local calendar days in the window, so months of different lengths can be compared.",
+  "privacy": "In memory for this session only. Customer, address, and account fields are not included. A meter ID with 6 or more digits is returned as **** plus its last 4 characters."
+}
+```
+
+## Tools
 
 | Tool | Result |
 | --- | --- |
@@ -56,13 +182,15 @@ Unzip a `.zip` download first. This version does not open zip files.
 | `peak_hours` | Top intervals, average by local hour, weekday vs weekend, baseload, load factor. |
 | `compare_periods` | `mom`, `yoy`, or two ranges. `perDay` divides by the calendar days in the window. |
 | `estimate_cost` | File costs when the file has them, or a flat, time-of-use, or tier rate, plus a fixed monthly charge. Always labeled an estimate. |
-| `export_normalized` | CSV or JSON at a path you choose. The only disk write. |
+| `export_normalized` | CSV or JSON at a path you choose. The only disk write. Refuses to replace an existing file unless `overwrite` is true. |
 
-Service category `0` is electric, `1` is gas, `2` is water. Flow direction `1` is delivered and `19` is received, so solar export stays off the consumption total unless you pass `direction: "net"`.
+Service category `0` is electric, `1` is gas, and `2` is water. Flow direction `1` is delivered and `19` is received, so solar export stays off the consumption total unless you pass `direction: "net"`. `server/units.js` also names the other ESPI service-kind and flow-direction codes it recognizes.
+
+`skills/green-button/SKILL.md` is the short instruction sheet for the agent.
 
 ## CSV format this version assumes
 
-ESPI XML is the Green Button feed. The CSV reader is a fallback for a Con Edison / PG&E style usage export, not a promise that every utility layout will parse.
+ESPI XML is the Green Button feed. The CSV reader is a fallback for one column layout, not a promise that every utility layout will parse.
 
 - Rows before the header are ignored. A header is the first row that has both a date column and a usage column.
 - Delimiter is comma. Quoted fields are allowed.
@@ -79,7 +207,7 @@ ESPI XML is the Green Button feed. The CSV reader is a fallback for a Con Edison
 
 ## Samples
 
-All three samples are synthetic. They are not a customer's data.
+All three samples are synthetic. They are not a customer's data. Rebuild them with `node scripts/build-samples.js`.
 
 | File | Contents |
 | --- | --- |
@@ -87,32 +215,38 @@ All three samples are synthetic. They are not a customer's data.
 | `samples/gas-daily.xml` | Gas, daily therms for 2024, no Atom links, so the parser has to use document order. |
 | `samples/usage-export.csv` | A short electric CSV with a fake preamble, a `utc_offset` column, and a few export rows. |
 
-Rebuild them with `node scripts/build-samples.js`.
-
 ## How values are scaled
 
 - Interval `value` is an integer. The quantity is `value * 10^powerOfTenMultiplier` in the ReadingType unit. `uom` 72 (Wh) is then divided by 1000 to kWh. `169` is therms. `128` is US gallons.
-- `cost` and `billLastPeriod` use Green Button's fixed scale of 10^-5 of the currency unit. `100000` is 1.00 in the ReadingType currency (`840` is USD). The multiplier on the ReadingType does not scale the cost.
+- `cost` and `billLastPeriod` use Green Button's fixed scale of 10^-5 of the currency unit. `100000` is 1.00 in the ReadingType currency (`840` is USD). The multiplier on the ReadingType does not scale the cost. `server/units.js` cites [greenbuttonalliance.org/costandcurrency](https://www.greenbuttonalliance.org/costandcurrency) for that scale.
 - `LocalTimeParameters.tzOffset` is standard time in seconds. DST rules are the 32-bit ESPI bitmap (`360E2000` is the second Sunday in March at 02:00). `FFFFFFFF` turns DST off.
-
-## Privacy
-
-See [PRIVACY.md](PRIVACY.md). Results stay in memory for the session. Customer, address, and account fields are omitted. There is no telemetry.
 
 ## Limits
 
 - Download-file only. No utility login, OAuth, Green Button Connect, or Share My Data.
 - No network calls. An `https` href inside the XML is an identifier, not a request.
-- Memory is discarded when the process exits. Nothing is written unless you call `export_normalized`.
+- Memory is discarded when the process exits. Nothing is written unless you call `export_normalized`. That call leaves an existing file untouched unless `overwrite` is true.
 - Zip files are rejected. Files larger than 32 MB are rejected.
 - The cost tool is an estimate. It does not model demand charges, baseline allowances, net-metering true-up, taxes, or a minimum bill. Tiers reset on calendar months that contain readings, and the fixed monthly charge is added once per such month. Time-of-use windows use the local hour of the interval start; the first matching window wins; `endHour` is exclusive.
 - File costs are used when any selected reading has one, unless `useFileCost` is false.
 - CSV support is the column map above. A file that does not match it will not parse.
 - IANA timezone names are not resolved. Without `LocalTimeParameters`, `localHour` is the UTC hour.
-- Meter and usage-point ids from the file are kept. If a utility embeds an account number in that id, the id is still returned.
+- A meter ID with 6 or more digits is treated as an account number. Every tool result and export shows `****` plus the last 4 characters (`990000001234` becomes `****1234`) and does not include the rest of the ID. Warning text is masked the same way. There is no option to reveal the full ID. A meter ID with fewer than 6 digits, such as `DELIVERED` or `12345`, is returned unchanged. You may pass either the masked ID or the original ID back in; the result still shows the mask. If two meter IDs mask to the same 4 characters, passing that mask is an error and the error does not contain either full ID.
+- Usage-point IDs are returned as stored. An account number that appears only in a usage-point ID is still returned. Text that copies a masked meter ID is removed with that meter ID.
+- The parser keeps the last path segment of a meter or usage-point id (the part after the last `:` when there is no `/`). If that segment is empty, longer than 80 characters, or contains a character other than letters, digits, and `._:-`, it substitutes `usage-point-N` or `<usage-point-id>-meter-N`. A CSV meter value that fails the same check becomes `csv-meter-N`. The original text is not kept.
 - Not every utility quirk is covered. Missing links, a missing namespace prefix, and a single resource (instead of an Atom feed) are accepted. A file that is neither ESPI nor the CSV shape above fails.
 - This repository is not submitted to a marketplace.
 
-## License
+## Privacy
 
-MIT.
+See [PRIVACY.md](PRIVACY.md). Results stay in memory for the session. Customer, address, and account fields are omitted. There is no telemetry.
+
+## Data sources and licenses
+
+- The code, docs, and sample files in this repository are [MIT](LICENSE), copyright (c) 2026 tnvolman.
+- The three files in `samples/` are synthetic output of `scripts/build-samples.js`. The name, street, and account number in them are fake and exist so tests can prove those fields are dropped. They are not a customer's account.
+- The server reads an ESPI Atom document (`http://naesb.org/espi`) or the CSV layout above. It does not include or redistribute the NAESB ESPI standard.
+- There are no npm dependencies and no third-party runtime libraries.
+- This project is not a utility and is not affiliated with the Green Button Alliance, NAESB, PG&E, SCE, Con Edison, or SDG&E.
+
+Built by Michael McClanahan (@TNVOLMAN)
