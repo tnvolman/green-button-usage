@@ -329,7 +329,15 @@ function exportNormalized(args) {
   }
   const exported = present(exportDocument(dataset));
   const body = format === "json" ? JSON.stringify(exported, null, 2) : toCsv(exported);
-  fs.writeFileSync(target, body);
+  const flag = input.overwrite === true ? "w" : "wx";
+  try {
+    fs.writeFileSync(target, body, { flag });
+  } catch (err) {
+    if (err && (err.code === "EEXIST" || err.code === "EISDIR")) {
+      throw new Error("A file already exists at that path. Pass overwrite: true to replace it.");
+    }
+    throw err;
+  }
   return present({
     path: target,
     format,

@@ -6,7 +6,7 @@ Green Button usage v0.1 reads a file you already downloaded. It does not log in 
 
 - The server keeps the parsed meters, readings, and bill periods in process memory. That includes the original meter ID, so a later call can pass either that ID or its masked form.
 - That memory is dropped when the MCP process exits. The plugin does not write a cache, a database, or a telemetry record.
-- The only file it writes is the one you ask `export_normalized` to write, at the path you give. Account-like meter IDs in that file are masked the same way as tool results.
+- The only file it writes is the one you ask `export_normalized` to write, at the path you give. If that path already exists, the write is refused unless you pass `overwrite: true`. Account-like meter IDs in that file are masked the same way as tool results.
 
 ## What is left out of results
 

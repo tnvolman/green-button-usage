@@ -48,11 +48,86 @@ Download the Green Button file from your utility yourself (often labeled Downloa
 
 ## Example
 
-Question, asked of the synthetic fixture `samples/electric-hourly.xml` (not a customer's data): how did delivered electricity in July 2024 compare with January 2024?
+These two calls were run on the synthetic fixture `samples/electric-hourly.xml`. It is not a customer's data. July's `startUtc` is `07:00Z` and January's is `08:00Z` because the fixture's `LocalTimeParameters` are Pacific time with daylight saving.
 
-`load_greenbutton` with that path returns file id `gb_35b2fc67d5be`, meter `DELIVERED` (electric, kWh, delivered, 9528 readings) and meter `RECEIVED` (electric, kWh, received, 3970 readings). `dateRange` is `2024-01-01T08:00:00Z` through `2025-02-01T08:00:00Z`.
+`load_greenbutton` arguments:
 
-`compare_periods` with `meterId` `DELIVERED`, `mode` `ranges`, period A `2024-07-01` to `2024-07-31`, and period B `2024-01-01` to `2024-01-31` returns:
+```json
+{
+  "path": "samples/electric-hourly.xml"
+}
+```
+
+`load_greenbutton` result:
+
+```json
+{
+  "fileId": "gb_35b2fc67d5be",
+  "format": "espi",
+  "meters": [
+    {
+      "id": "DELIVERED",
+      "usagePointId": "ELECTRIC-1",
+      "kind": "electric",
+      "unit": "kWh",
+      "intervalSec": 3600,
+      "tz": {
+        "tzOffset": -28800,
+        "dstOffset": 3600,
+        "dstStartRule": "360E2000",
+        "dstEndRule": "B40E2000"
+      },
+      "direction": "delivered",
+      "readingCount": 9528
+    },
+    {
+      "id": "RECEIVED",
+      "usagePointId": "ELECTRIC-1",
+      "kind": "electric",
+      "unit": "kWh",
+      "intervalSec": 3600,
+      "tz": {
+        "tzOffset": -28800,
+        "dstOffset": 3600,
+        "dstStartRule": "360E2000",
+        "dstEndRule": "B40E2000"
+      },
+      "direction": "received",
+      "readingCount": 3970
+    }
+  ],
+  "dateRange": {
+    "startUtc": "2024-01-01T08:00:00Z",
+    "endUtc": "2025-02-01T08:00:00Z"
+  },
+  "units": [
+    "kWh"
+  ],
+  "readingCount": 13498,
+  "billPeriodCount": 13,
+  "warnings": [
+    {
+      "code": "stripped-customer-fields",
+      "message": "Customer, address, and account elements were dropped and are not in the result."
+    }
+  ],
+  "privacy": "In memory for this session only. Customer, address, and account fields are not included. A meter ID with 6 or more digits is returned as **** plus its last 4 characters."
+}
+```
+
+`compare_periods` arguments:
+
+```json
+{
+  "fileId": "gb_35b2fc67d5be",
+  "meterId": "DELIVERED",
+  "mode": "ranges",
+  "periodA": { "start": "2024-07-01", "end": "2024-07-31" },
+  "periodB": { "start": "2024-01-01", "end": "2024-01-31" }
+}
+```
+
+`compare_periods` result:
 
 ```json
 {
@@ -97,8 +172,6 @@ Question, asked of the synthetic fixture `samples/electric-hourly.xml` (not a cu
 }
 ```
 
-July's `startUtc` is `07:00Z` and January's is `08:00Z` because this fixture's `LocalTimeParameters` are Pacific time with daylight saving.
-
 ## Tools
 
 | Tool | Result |
@@ -109,7 +182,7 @@ July's `startUtc` is `07:00Z` and January's is `08:00Z` because this fixture's `
 | `peak_hours` | Top intervals, average by local hour, weekday vs weekend, baseload, load factor. |
 | `compare_periods` | `mom`, `yoy`, or two ranges. `perDay` divides by the calendar days in the window. |
 | `estimate_cost` | File costs when the file has them, or a flat, time-of-use, or tier rate, plus a fixed monthly charge. Always labeled an estimate. |
-| `export_normalized` | CSV or JSON at a path you choose. The only disk write. |
+| `export_normalized` | CSV or JSON at a path you choose. The only disk write. Refuses to replace an existing file unless `overwrite` is true. |
 
 Service category `0` is electric, `1` is gas, and `2` is water. Flow direction `1` is delivered and `19` is received, so solar export stays off the consumption total unless you pass `direction: "net"`. `server/units.js` also names the other ESPI service-kind and flow-direction codes it recognizes.
 
@@ -152,7 +225,7 @@ All three samples are synthetic. They are not a customer's data. Rebuild them wi
 
 - Download-file only. No utility login, OAuth, Green Button Connect, or Share My Data.
 - No network calls. An `https` href inside the XML is an identifier, not a request.
-- Memory is discarded when the process exits. Nothing is written unless you call `export_normalized`.
+- Memory is discarded when the process exits. Nothing is written unless you call `export_normalized`. That call leaves an existing file untouched unless `overwrite` is true.
 - Zip files are rejected. Files larger than 32 MB are rejected.
 - The cost tool is an estimate. It does not model demand charges, baseline allowances, net-metering true-up, taxes, or a minimum bill. Tiers reset on calendar months that contain readings, and the fixed monthly charge is added once per such month. Time-of-use windows use the local hour of the interval start; the first matching window wins; `endHour` is exclusive.
 - File costs are used when any selected reading has one, unless `useFileCost` is false.

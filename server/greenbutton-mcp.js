@@ -143,13 +143,17 @@ const TOOLS = [
   {
     name: "export_normalized",
     description:
-      "Write the normalized meters, readings, and bill periods as CSV or JSON to a path you choose. This is the only disk write.",
+      "Write the normalized meters, readings, and bill periods as CSV or JSON to a path you choose. This is the only disk write. Refuses to replace an existing file unless overwrite is true.",
     inputSchema: {
       type: "object",
       properties: {
         fileId: { type: "string" },
         path: { type: "string" },
         format: { type: "string", enum: ["csv", "json"] },
+        overwrite: {
+          type: "boolean",
+          description: "Set true to replace a file that already exists at path. Omitted or false leaves that file untouched.",
+        },
       },
       required: ["path", "format"],
       additionalProperties: false,

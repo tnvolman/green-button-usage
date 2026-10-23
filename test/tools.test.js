@@ -362,6 +362,28 @@ test("two meter ids that mask to the same value do not reveal either full id", (
   assert.equal(picked.overall.total, 5);
 });
 
+test("export_normalized refuses to overwrite an existing file unless overwrite is true", () => {
+  loadGreenbutton({ xml_text: twoDayFile() });
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gb-overwrite-"));
+  const target = path.join(dir, "out.json");
+  fs.writeFileSync(target, "original");
+  assert.throws(() => exportNormalized({ path: target, format: "json" }), /overwrite: true/);
+  assert.equal(fs.readFileSync(target, "utf8"), "original");
+  assert.throws(() => exportNormalized({ path: target, format: "json", overwrite: false }), /overwrite: true/);
+  assert.throws(() => exportNormalized({ path: target, format: "json", overwrite: "true" }), /overwrite: true/);
+  assert.equal(fs.readFileSync(target, "utf8"), "original");
+  const replaced = exportNormalized({ path: target, format: "json", overwrite: true });
+  const body = fs.readFileSync(target, "utf8");
+  assert.equal(replaced.path, target);
+  assert.notEqual(body, "original");
+  assert.equal(body.includes("HOUSE"), true);
+  assert.equal(body.includes("original"), false);
+  const fresh = path.join(dir, "fresh.csv");
+  const created = exportNormalized({ path: fresh, format: "csv" });
+  assert.equal(created.format, "csv");
+  assert.equal(fs.readFileSync(fresh, "utf8").includes("HOUSE"), true);
+});
+
 test("load rejects a zip and does not write during load", () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gb-zip-"));
   const zipPath = path.join(dir, "data.zip");
