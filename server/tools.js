@@ -66,13 +66,28 @@ function present(value) {
   return scrub(value, accountIdPairs(), null);
 }
 
+function maskErrorText(text) {
+  const out = scrub(String(text == null ? "" : text), accountIdPairs(), null);
+  return out.replace(/[A-Za-z0-9._:-]+/g, (token) => {
+    const trimmed = token.replace(/\.+$/, "");
+    const suffix = token.slice(trimmed.length);
+    if (/^gb_[0-9a-f]{12}$/i.test(trimmed)) return token;
+    if (/^\d{4}-\d{1,2}-\d{1,2}$/.test(trimmed)) return token;
+    return maskAccountId(trimmed) + suffix;
+  });
+}
+
+function fail(message) {
+  throw new Error(maskErrorText(message));
+}
+
 function canonicalMeterId(dataset, requested) {
   if (!requested) return requested;
   if (dataset.meters.some((meter) => meter.id === requested)) return requested;
   const matches = dataset.meters.filter((meter) => maskAccountId(meter.id) === requested);
   if (matches.length === 1) return matches[0].id;
   if (matches.length > 1) {
-    throw new Error("More than one meter is returned as " + requested + ". Pass a meter ID only when it identifies one meter.");
+    fail("More than one meter is returned as " + requested + ". Pass a meter ID only when it identifies one meter.");
   }
   return requested;
 }
@@ -83,7 +98,7 @@ function canonicalUsagePointId(dataset, requested) {
   const matches = dataset.usagePoints.filter((point) => maskAccountId(point.id) === requested);
   if (matches.length === 1) return matches[0].id;
   if (matches.length > 1) {
-    throw new Error(
+    fail(
       "More than one usage point is returned as " + requested + ". Pass a usage point ID only when it identifies one usage point."
     );
   }
@@ -156,7 +171,7 @@ function usageSummary(args) {
   const dataset = requireDataset(args && args.fileId);
   const granularity = (args && args.granularity) || "day";
   if (!["day", "week", "month"].includes(granularity)) {
-    throw new Error("granularity must be day, week, or month.");
+    fail("granularity must be day, week, or month.");
   }
   const selected = selectReadings(dataset, args || {});
   const buckets = bucketize(selected.readings, granularity);
@@ -177,7 +192,7 @@ function peakHours(args) {
   const dataset = requireDataset(args && args.fileId);
   const direction = args && args.direction;
   if (direction === "net" || direction === "all") {
-    throw new Error('peak_hours keeps delivered and received separate. Pass direction "delivered" or "received".');
+    fail('peak_hours keeps delivered and received separate. Pass direction "delivered" or "received".');
   }
   const selected = selectReadings(dataset, args || {});
   const readings = selected.readings;
@@ -232,7 +247,7 @@ function comparePeriods(args) {
   const input = args || {};
   const mode = input.mode || (input.periodA && input.periodB ? "ranges" : "");
   if (!["mom", "yoy", "ranges"].includes(mode)) {
-    throw new Error('mode must be "mom", "yoy", or "ranges".');
+    fail('mode must be "mom", "yoy", or "ranges".');
   }
   const selected = selectReadings(dataset, input);
   let rangeA;
@@ -271,12 +286,12 @@ function estimateCost(args) {
   const dataset = requireDataset(args && args.fileId);
   const input = args || {};
   if (input.direction === "net" || input.direction === "all") {
-    throw new Error('estimate_cost uses one direction. Pass "delivered" or "received".');
+    fail('estimate_cost uses one direction. Pass "delivered" or "received".');
   }
   const selected = selectReadings(dataset, input);
   const fixedMonthly = input.fixedMonthly == null ? 0 : Number(input.fixedMonthly);
   if (!Number.isFinite(fixedMonthly) || fixedMonthly < 0) {
-    throw new Error("fixedMonthly must be a non-negative number.");
+    fail("fixedMonthly must be a non-negative number.");
   }
   const useFileCost = input.useFileCost !== false;
   const fileCosts = selected.readings.filter((reading) => reading.cost != null);
@@ -309,7 +324,7 @@ function estimateCost(args) {
     rateEstimate = rateForReadings(selected.readings, input.rate, fixedMonthly, months);
   }
   if (!fileCost && !rateEstimate) {
-    throw new Error("This file has no interval costs. Pass a rate (flat, tou, or tiers) to build an estimate.");
+    fail("This file has no interval costs. Pass a rate (flat, tou, or tiers) to build an estimate.");
   }
   const primary = fileCost ? "file" : "rate";
   const total = fileCost ? fileCost.total : rateEstimate.total;
@@ -338,14 +353,14 @@ function exportNormalized(args) {
   const input = args || {};
   const dataset = requireDataset(input.fileId);
   if (typeof input.path !== "string" || !input.path.trim()) {
-    throw new Error("path is required. export_normalized writes only to the path you give.");
+    fail("path is required. export_normalized writes only to the path you give.");
   }
   const format = input.format === "csv" || input.format === "json" ? input.format : "";
-  if (!format) throw new Error('format must be "csv" or "json".');
+  if (!format) fail('format must be "csv" or "json".');
   const target = path.resolve(input.path.trim());
   const parent = path.dirname(target);
   if (!fs.existsSync(parent) || !fs.statSync(parent).isDirectory()) {
-    throw new Error("The directory for that path does not exist.");
+    fail("The directory for that path does not exist.");
   }
   const exported = present(exportDocument(dataset));
   const body = format === "json" ? JSON.stringify(exported, null, 2) : toCsv(exported);
@@ -354,7 +369,7 @@ function exportNormalized(args) {
     fs.writeFileSync(target, body, { flag });
   } catch (err) {
     if (err && (err.code === "EEXIST" || err.code === "EISDIR")) {
-      throw new Error("A file already exists at that path. Pass overwrite: true to replace it.");
+      fail("A file already exists at that path. Pass overwrite: true to replace it.");
     }
     throw err;
   }
@@ -453,35 +468,35 @@ function csvCell(value) {
 
 function readLoadInput(args) {
   const keys = ["path", "xml_text", "csv_text"].filter((key) => typeof args[key] === "string" && args[key].trim() !== "");
-  if (keys.length !== 1) throw new Error("Provide exactly one of path, xml_text, or csv_text.");
+  if (keys.length !== 1) fail("Provide exactly one of path, xml_text, or csv_text.");
   const extra = Object.keys(args).filter((key) => !["path", "xml_text", "csv_text"].includes(key));
-  if (extra.length) throw new Error("Unknown argument: " + extra.join(", "));
+  if (extra.length) fail("Unknown argument: " + extra.join(", "));
   if (keys[0] === "path") {
     const target = path.resolve(args.path.trim());
     if (!fs.existsSync(target) || !fs.statSync(target).isFile()) {
-      throw new Error("No file at that path.");
+      fail("No file at that path.");
     }
     const stat = fs.statSync(target);
-    if (stat.size > MAX_FILE_BYTES) throw new Error("File is larger than 32 MB.");
+    if (stat.size > MAX_FILE_BYTES) fail("File is larger than 32 MB.");
     const buffer = fs.readFileSync(target);
     if (buffer.length >= 2 && buffer[0] === 0x50 && buffer[1] === 0x4b) {
-      throw new Error("This file is a zip archive. Unzip it and pass the XML or CSV inside. This plugin does not read zip files.");
+      fail("This file is a zip archive. Unzip it and pass the XML or CSV inside. This plugin does not read zip files.");
     }
     return { text: buffer.toString("utf8"), hint: path.extname(target).slice(1) };
   }
-  if (args[keys[0]].length > MAX_FILE_BYTES) throw new Error("That text is larger than 32 MB. Pass a path instead.");
+  if (args[keys[0]].length > MAX_FILE_BYTES) fail("That text is larger than 32 MB. Pass a path instead.");
   return { text: args[keys[0]], hint: keys[0] === "csv_text" ? "csv" : "xml" };
 }
 
 function requireDataset(fileId) {
   if (fileId) {
     const dataset = store.get(fileId);
-    if (!dataset) throw new Error("No loaded file with that id. Call load_greenbutton first.");
+    if (!dataset) fail("No loaded file with that id. Call load_greenbutton first.");
     return dataset;
   }
   if (store.size === 1) return store.values().next().value;
-  if (store.size === 0) throw new Error("No Green Button file is loaded. Call load_greenbutton with a local path first.");
-  throw new Error("More than one file is loaded. Pass fileId. Loaded ids: " + [...store.keys()].join(", "));
+  if (store.size === 0) fail("No Green Button file is loaded. Call load_greenbutton with a local path first.");
+  fail("More than one file is loaded. Pass fileId. Loaded ids: " + [...store.keys()].join(", "));
 }
 
 function selectReadings(dataset, args) {
@@ -490,13 +505,13 @@ function selectReadings(dataset, args) {
   if (args.meterId) {
     meterId = canonicalMeterId(dataset, args.meterId);
     const meter = dataset.meters.find((item) => item.id === meterId);
-    if (!meter) throw new Error("No meter with id " + meterId + ".");
+    if (!meter) fail("No meter with id " + meterId + ".");
     readings = readings.filter((reading) => reading.meterId === meterId);
   }
   if (args.usagePointId) {
     const usagePointId = canonicalUsagePointId(dataset, args.usagePointId);
     const point = dataset.usagePoints.find((item) => item.id === usagePointId);
-    if (!point) throw new Error("No usage point with id " + args.usagePointId + ".");
+    if (!point) fail("No usage point with id " + args.usagePointId + ".");
     const ids = new Set(point.meterIds);
     readings = readings.filter((reading) => ids.has(reading.meterId));
   }
@@ -505,7 +520,7 @@ function selectReadings(dataset, args) {
   const unitSource = readings.slice();
   if (direction === "net") {
     const units = [...new Set(unitSource.map((reading) => meterUnit(dataset, reading.meterId)))];
-    if (units.length > 1) throw new Error("Those readings use more than one unit (" + units.join(", ") + "). Pass meterId.");
+    if (units.length > 1) fail("Those readings use more than one unit (" + units.join(", ") + "). Pass meterId.");
     return {
       readings: netReadings(readings),
       direction: "net",
@@ -529,7 +544,7 @@ function selectReadings(dataset, args) {
   }
   const units = [...new Set(readings.map((reading) => meterUnit(dataset, reading.meterId)))];
   if (units.length > 1) {
-    throw new Error("Those readings use more than one unit (" + units.join(", ") + "). Pass meterId.");
+    fail("Those readings use more than one unit (" + units.join(", ") + "). Pass meterId.");
   }
   return {
     readings,
@@ -641,18 +656,18 @@ function parseLocalDate(text) {
 
 function explicitRange(value, label) {
   if (!value || typeof value !== "object" || !value.start || !value.end) {
-    throw new Error(label + " needs start and end.");
+    fail(label + " needs start and end.");
   }
   const startDate = dateOnly(value.start);
   const endDate = dateOnly(value.end);
   if (startDate && endDate) {
     const endExclusive = addLocalDays(endDate, 1);
-    if (!(startDate < endExclusive)) throw new Error(label + " end must be on or after start.");
+    if (!(startDate < endExclusive)) fail(label + " end must be on or after start.");
     return { kind: "dates", startDate, endDate: endExclusive, label: startDate + ".." + endDate };
   }
   const startMs = parseInstant(value.start);
   const endMs = parseInstant(value.end);
-  if (!(startMs < endMs)) throw new Error(label + " end must be after start.");
+  if (!(startMs < endMs)) fail(label + " end must be after start.");
   return { kind: "instant", startMs, endMs, label: label === "periodA" ? "A" : "B" };
 }
 
@@ -663,7 +678,7 @@ function dateOnly(value) {
 
 function parseInstant(value) {
   const ms = Date.parse(String(value).trim());
-  if (!Number.isFinite(ms)) throw new Error("Could not parse date " + value + ".");
+  if (!Number.isFinite(ms)) fail("Could not parse date " + value + ".");
   return ms;
 }
 
@@ -674,10 +689,10 @@ function addLocalDays(text, days) {
 }
 
 function relativeRanges(readings, mode) {
-  if (!readings.length) throw new Error("There are no readings to compare.");
+  if (!readings.length) fail("There are no readings to compare.");
   const months = completeMonths(readings);
   if (mode === "mom") {
-    if (months.length < 2) throw new Error("Not enough data for month-over-month. Need two complete calendar months.");
+    if (months.length < 2) fail("Not enough data for month-over-month. Need two complete calendar months.");
     const later = months[months.length - 1];
     const earlier = months[months.length - 2];
     return { a: monthRange(later), b: monthRange(earlier) };
@@ -685,7 +700,7 @@ function relativeRanges(readings, mode) {
   const later = months[months.length - 1];
   const earlierKey = shiftMonth(later, -12);
   if (!months.includes(earlierKey)) {
-    throw new Error("Not enough data for year-over-year. Need the same calendar month in the previous year.");
+    fail("Not enough data for year-over-year. Need the same calendar month in the previous year.");
   }
   return { a: monthRange(later), b: monthRange(earlierKey) };
 }
@@ -793,9 +808,9 @@ function groupByMonth(readings) {
 }
 
 function rateForReadings(readings, rate, fixedMonthly, months) {
-  if (!rate || typeof rate !== "object") throw new Error("rate must be an object.");
+  if (!rate || typeof rate !== "object") fail("rate must be an object.");
   const type = rate.type;
-  if (!["flat", "tou", "tiers"].includes(type)) throw new Error('rate.type must be "flat", "tou", or "tiers".');
+  if (!["flat", "tou", "tiers"].includes(type)) fail('rate.type must be "flat", "tou", or "tiers".');
   const byMonth = [];
   for (const month of months) {
     let energy = 0;
@@ -828,7 +843,7 @@ function rateForReadings(readings, rate, fixedMonthly, months) {
 function touCost(readings, rate) {
   const offPeak = requirePrice(rate.offPeakPrice, "offPeakPrice");
   const windows = Array.isArray(rate.windows) ? rate.windows : [];
-  if (!windows.length) throw new Error("tou rate needs at least one window.");
+  if (!windows.length) fail("tou rate needs at least one window.");
   let cost = 0;
   for (const reading of readings) {
     const match = windows.find((window) => windowMatches(reading, window));
@@ -847,7 +862,7 @@ function windowMatches(reading, window) {
   if (days === "weekday" && weekend) return false;
   if (days === "weekend" && !weekend) return false;
   if (days !== "all" && days !== "weekday" && days !== "weekend") {
-    throw new Error('window.days must be "all", "weekday", or "weekend".');
+    fail('window.days must be "all", "weekday", or "weekend".');
   }
   const hour = reading.localHour;
   if (start === end) return false;
@@ -857,7 +872,7 @@ function windowMatches(reading, window) {
 }
 
 function tierCost(usage, tiers) {
-  if (!Array.isArray(tiers) || !tiers.length) throw new Error("tiers rate needs a tiers array.");
+  if (!Array.isArray(tiers) || !tiers.length) fail("tiers rate needs a tiers array.");
   const ordered = tiers.slice().sort((a, b) => {
     if (a.upTo == null) return 1;
     if (b.upTo == null) return -1;
@@ -869,7 +884,7 @@ function tierCost(usage, tiers) {
   for (const tier of ordered) {
     const price = requirePrice(tier.pricePerUnit, "tier.pricePerUnit");
     const cap = tier.upTo == null ? Infinity : Number(tier.upTo);
-    if (!Number.isFinite(cap) && tier.upTo != null) throw new Error("tier.upTo must be a number or null.");
+    if (!Number.isFinite(cap) && tier.upTo != null) fail("tier.upTo must be a number or null.");
     const room = cap - previous;
     const used = Math.min(remaining, room);
     if (used > 0) cost += used * price;
@@ -882,7 +897,7 @@ function tierCost(usage, tiers) {
 
 function requirePrice(value, label) {
   const n = Number(value);
-  if (!Number.isFinite(n)) throw new Error(label + " must be a number.");
+  if (!Number.isFinite(n)) fail(label + " must be a number.");
   return n;
 }
 
@@ -896,7 +911,7 @@ function currencyOf(readings, rate) {
 function clampLimit(value) {
   if (value == null) return 10;
   const n = Number(value);
-  if (!Number.isInteger(n) || n < 1 || n > 100) throw new Error("limit must be an integer from 1 to 100.");
+  if (!Number.isInteger(n) || n < 1 || n > 100) fail("limit must be an integer from 1 to 100.");
   return n;
 }
 
@@ -917,7 +932,7 @@ function dispatchTool(name, args) {
   if (name === "compare_periods") return comparePeriods(args);
   if (name === "estimate_cost") return estimateCost(args);
   if (name === "export_normalized") return exportNormalized(args);
-  const error = new Error("Unknown tool " + name + ".");
+  const error = new Error(maskErrorText("Unknown tool " + name + "."));
   error.code = "tool";
   throw error;
 }
@@ -934,5 +949,7 @@ module.exports = {
   estimateCost,
   exportNormalized,
   dispatchTool,
+  maskAccountId,
+  maskErrorText,
   daysInMonth,
 };

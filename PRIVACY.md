@@ -12,9 +12,9 @@ Green Button usage v0.1 reads a file you already downloaded. It does not log in 
 
 Tool results and exports do not include customer, account, or postal-address elements from the file. Columns and preamble lines for name, address, and account number in a CSV are dropped the same way.
 
-A meter ID with 6 or more digits is treated as an account number. Before any tool returns it, the ID is replaced with `****` plus its last 4 characters, for example `990000001234` becomes `****1234`. The full meter ID does not appear in the result, in warning text, or in an export. A meter ID with fewer than 6 digits is returned unchanged. There is no switch that turns the mask off.
+A meter ID with 6 or more digits is treated as an account number. Before any tool returns it, the ID is replaced with `****` plus its last 4 characters, for example `990000001234` becomes `****1234`. The full meter ID does not appear in the result, in warning text, in an error message, or in an export. A meter ID with fewer than 6 digits is returned unchanged. There is no switch that turns the mask off.
 
-A usage-point ID with 6 or more digits is treated as an account number and masked the same way as a meter ID, before any tool returns it. `ACCT-4417220931` becomes `****0931`. The full usage-point ID does not appear in the result, in warning text, or in an export. A usage-point ID with fewer than 6 digits is returned unchanged. There is no switch that turns the mask off. Text that copies a masked meter ID or usage-point ID is removed from the result along with that ID.
+A usage-point ID with 6 or more digits is treated as an account number and masked the same way as a meter ID, before any tool returns it. `ACCT-4417220931` becomes `****0931`. The full usage-point ID does not appear in the result, in warning text, in an error message, or in an export. A usage-point ID with fewer than 6 digits is returned unchanged. There is no switch that turns the mask off. Text that copies a masked meter ID or usage-point ID is removed from the result along with that ID.
 
 ## What this is not
 

@@ -15,7 +15,8 @@ const {
   estimateCost,
   exportNormalized,
 } = require("../server/tools");
-const { feed, entry, localTime, readingType, intervalBlock, usagePoint, meter, unix } = require("./helpers");
+const { callTool } = require("../server/greenbutton-mcp");
+const { feed, entry, localTime, readingType, intervalBlock, usagePoint, meter, unix, longUsagePointFeed } = require("./helpers");
 
 function hourReading(iso, kwh, cost) {
   return { start: unix(iso), duration: 3600, value: Math.round(kwh * 1000), cost: cost == null ? null : cost };
@@ -382,6 +383,67 @@ test("an account number planted in a usage-point id is masked to the last 4 char
   assert.equal(jsonFile.includes("****0931"), true);
   assert.equal(csvFile.includes("****0931"), true);
   assert.equal(csvFile.includes(fullId), false);
+});
+
+test("a long unknown id is masked in usage-point and meter errors", () => {
+  const usagePointId = "ACCT-4417220931";
+  const unknownId = "ACCT-9999999999";
+  const xml = longUsagePointFeed(usagePointId);
+  assert.equal(xml.includes(usagePointId), true);
+  loadGreenbutton({ xml_text: xml });
+
+  function assertMasked(err, masked) {
+    const message = String(err && err.message);
+    assert.equal(message.includes(unknownId), false);
+    assert.equal(message.includes(usagePointId), false);
+    assert.equal(message.includes("9999999999"), false);
+    assert.equal(message.includes("4417220931"), false);
+    assert.match(message, masked);
+    return true;
+  }
+
+  assert.throws(
+    () => usageSummary({ usagePointId: unknownId, granularity: "day" }),
+    (err) => assertMasked(err, /No usage point with id \*\*\*\*9999/)
+  );
+  assert.throws(
+    () => usageSummary({ meterId: unknownId, granularity: "day" }),
+    (err) => assertMasked(err, /No meter with id \*\*\*\*9999/)
+  );
+  assert.throws(
+    () => usageSummary({ meterId: usagePointId, granularity: "day" }),
+    (err) => {
+      assert.equal(String(err.message).includes(usagePointId), false);
+      assert.equal(String(err.message).includes("4417220931"), false);
+      assert.match(err.message, /No meter with id \*\*\*\*0931/);
+      return true;
+    }
+  );
+  assert.throws(
+    () => usageSummary({ meterId: "12345", granularity: "day" }),
+    (err) => {
+      assert.match(err.message, /No meter with id 12345/);
+      return true;
+    }
+  );
+
+  const usageError = callTool({
+    name: "usage_summary",
+    arguments: { usagePointId: unknownId, granularity: "day" },
+  });
+  const meterError = callTool({
+    name: "usage_summary",
+    arguments: { meterId: unknownId, granularity: "day" },
+  });
+  const output = JSON.stringify([usageError, meterError]);
+  assert.equal(usageError.isError, true);
+  assert.equal(meterError.isError, true);
+  assert.equal(output.includes(unknownId), false);
+  assert.equal(output.includes(usagePointId), false);
+  assert.equal(output.includes("9999999999"), false);
+  assert.equal(output.includes("4417220931"), false);
+  assert.match(usageError.content[0].text, /No usage point with id \*\*\*\*9999/);
+  assert.match(meterError.content[0].text, /No meter with id \*\*\*\*9999/);
 });
 
 test("two meter ids that mask to the same value do not reveal either full id", () => {

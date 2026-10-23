@@ -76,6 +76,24 @@ function usagePoint(kind) {
   );
 }
 
+function usagePointWithId(id, kind) {
+  return entry(
+    "urn:synthetic:UsagePoint/" + id,
+    "<espi:UsagePoint><espi:ServiceCategory><espi:kind>" + (kind == null ? 0 : kind) + "</espi:kind></espi:ServiceCategory></espi:UsagePoint>"
+  );
+}
+
+function longUsagePointFeed(usagePointId) {
+  const id = usagePointId || "ACCT-4417220931";
+  return feed(
+    usagePointWithId(id, 0) +
+      localTime(0) +
+      meter("HOUSE") +
+      readingType("RT", 1, 72, 0, 3600, 840) +
+      intervalBlock([{ start: unix("2024-01-15T00:00:00Z"), duration: 3600, value: 1000, cost: 100000 }])
+  );
+}
+
 function meter(id) {
   return entry("urn:synthetic:MeterReading/" + id, "<espi:MeterReading></espi:MeterReading>");
 }
@@ -84,4 +102,15 @@ function unix(iso) {
   return Math.floor(Date.parse(iso) / 1000);
 }
 
-module.exports = { feed, entry, localTime, readingType, intervalBlock, usagePoint, meter, unix };
+module.exports = {
+  feed,
+  entry,
+  localTime,
+  readingType,
+  intervalBlock,
+  usagePoint,
+  usagePointWithId,
+  longUsagePointFeed,
+  meter,
+  unix,
+};

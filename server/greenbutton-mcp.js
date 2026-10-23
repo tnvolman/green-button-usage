@@ -9,7 +9,7 @@
  * Loaded files stay in memory and disappear when the process exits.
  */
 
-const { dispatchTool } = require("./tools");
+const { dispatchTool, maskErrorText } = require("./tools");
 
 const SERVER_NAME = "green-button";
 const SERVER_VERSION = "0.1.0";
@@ -207,7 +207,8 @@ function callTool(params) {
   try {
     return toolOk(dispatchTool(name, args));
   } catch (err) {
-    return toolError(err && err.message ? err.message : "The tool failed.");
+    const message = err && err.message ? err.message : "The tool failed.";
+    return toolError(maskErrorText(message));
   }
 }
 
@@ -333,4 +334,4 @@ function start() {
 
 if (require.main === module) start();
 
-module.exports = { SERVER_NAME, SERVER_VERSION, TOOLS };
+module.exports = { SERVER_NAME, SERVER_VERSION, TOOLS, callTool };
