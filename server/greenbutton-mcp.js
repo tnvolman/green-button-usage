@@ -23,7 +23,8 @@ const TOOLS = [
     description:
       "Load a local Green Button file. Pass a path, ESPI XML text, or usage CSV text. " +
       "Nothing is downloaded and nothing is sent over the network. " +
-      "Returns a file id, meters, date range, and units. Customer, address, and account fields are omitted.",
+      "Returns a file id, meters, date range, and units. Customer, address, and account fields are omitted. " +
+      "A meter ID with 6 or more digits is returned as **** plus its last 4 characters.",
     inputSchema: {
       type: "object",
       properties: {
@@ -232,6 +233,7 @@ function handle(message, framing) {
           "The user downloads a Green Button file from their utility. " +
           "Call load_greenbutton with the local path. Do not log in, do not fetch the file, and do not send it anywhere. " +
           "Keep delivered usage and received solar export separate. " +
+          "A meter ID with 6 or more digits is masked to **** and its last 4 characters. Do not reconstruct the full ID. " +
           "Cost figures are estimates. If a tool returns an error, show that error only.",
       },
       frame

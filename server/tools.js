@@ -9,8 +9,66 @@ const { round6, money, daysInMonth } = require("./units");
 const MAX_FILE_BYTES = 32 * 1024 * 1024;
 const store = new Map();
 
-const PRIVACY = "In memory for this session only. Customer, address, and account fields are not included.";
+const PRIVACY =
+  "In memory for this session only. Customer, address, and account fields are not included. " +
+  "A meter ID with 6 or more digits is returned as **** plus its last 4 characters.";
 const ESTIMATE_DISCLAIMER = "Estimate only. This is not a utility bill, a tariff, or a quote from the utility.";
+const ACCOUNT_DIGIT_MIN = 6;
+
+function meterIdHasAccountNumber(id) {
+  const digits = String(id).match(/\d/g);
+  return Boolean(digits && digits.length >= ACCOUNT_DIGIT_MIN);
+}
+
+function maskMeterId(id) {
+  const text = String(id);
+  if (!meterIdHasAccountNumber(text)) return text;
+  return "****" + text.slice(-4);
+}
+
+function accountMeterPairs() {
+  const ids = [];
+  for (const dataset of store.values()) {
+    for (const meter of dataset.meters) {
+      if (meterIdHasAccountNumber(meter.id) && !ids.includes(meter.id)) ids.push(meter.id);
+    }
+  }
+  ids.sort((a, b) => b.length - a.length);
+  return ids.map((id) => [id, maskMeterId(id)]);
+}
+
+function scrub(value, pairs, key) {
+  if (typeof value === "string") {
+    if (key === "path") return value;
+    let out = value;
+    for (const [raw, masked] of pairs) {
+      if (out.includes(raw)) out = out.split(raw).join(masked);
+    }
+    return out;
+  }
+  if (Array.isArray(value)) return value.map((item) => scrub(item, pairs, null));
+  if (value && typeof value === "object") {
+    const out = {};
+    for (const child of Object.keys(value)) out[child] = scrub(value[child], pairs, child);
+    return out;
+  }
+  return value;
+}
+
+function present(value) {
+  return scrub(value, accountMeterPairs(), null);
+}
+
+function canonicalMeterId(dataset, requested) {
+  if (!requested) return requested;
+  if (dataset.meters.some((meter) => meter.id === requested)) return requested;
+  const matches = dataset.meters.filter((meter) => maskMeterId(meter.id) === requested);
+  if (matches.length === 1) return matches[0].id;
+  if (matches.length > 1) {
+    throw new Error("More than one meter is returned as " + requested + ". Pass a meter ID only when it identifies one meter.");
+  }
+  return requested;
+}
 
 function clearStore() {
   store.clear();
@@ -47,12 +105,12 @@ function loadGreenbutton(args) {
   dataset.fileId = fileId;
   delete dataset._internal;
   store.set(fileId, dataset);
-  return loadSummary(fileId);
+  return present(loadSummary(fileId));
 }
 
 function listUsagePoints(args) {
   const dataset = requireDataset(args && args.fileId);
-  return {
+  return present({
     fileId: dataset.fileId,
     usagePoints: dataset.usagePoints.map((point) => ({
       id: point.id,
@@ -71,7 +129,7 @@ function listUsagePoints(args) {
         })),
     })),
     privacy: PRIVACY,
-  };
+  });
 }
 
 function usageSummary(args) {
@@ -82,7 +140,7 @@ function usageSummary(args) {
   }
   const selected = selectReadings(dataset, args || {});
   const buckets = bucketize(selected.readings, granularity);
-  return {
+  return present({
     fileId: dataset.fileId,
     meterId: args && args.meterId ? args.meterId : null,
     granularity,
@@ -92,7 +150,7 @@ function usageSummary(args) {
     buckets,
     overall: overallFromBuckets(buckets, selected.readings),
     privacy: PRIVACY,
-  };
+  });
 }
 
 function peakHours(args) {
@@ -124,7 +182,7 @@ function peakHours(args) {
   const peak = values.length ? values[values.length - 1] : null;
   const average = values.length ? round6(mean(values)) : null;
   const loadFactor = peak ? round6(average / peak) : null;
-  return {
+  return present({
     fileId: dataset.fileId,
     meterId: selected.meterId,
     unit: selected.unit,
@@ -146,7 +204,7 @@ function peakHours(args) {
       weekend: "Saturday and Sunday, same averages as weekday.",
     },
     privacy: PRIVACY,
-  };
+  });
 }
 
 function comparePeriods(args) {
@@ -169,7 +227,7 @@ function comparePeriods(args) {
   }
   const periodA = summarizeRange(selected.readings, rangeA);
   const periodB = summarizeRange(selected.readings, rangeB);
-  return {
+  return present({
     fileId: dataset.fileId,
     meterId: selected.meterId,
     mode,
@@ -186,7 +244,7 @@ function comparePeriods(args) {
     },
     normalization: "perDay divides the period total by the number of local calendar days in the window, so months of different lengths can be compared.",
     privacy: PRIVACY,
-  };
+  });
 }
 
 function estimateCost(args) {
@@ -235,7 +293,7 @@ function estimateCost(args) {
   }
   const primary = fileCost ? "file" : "rate";
   const total = fileCost ? fileCost.total : rateEstimate.total;
-  return {
+  return present({
     estimate: true,
     label: "estimate",
     disclaimer: ESTIMATE_DISCLAIMER,
@@ -253,7 +311,7 @@ function estimateCost(args) {
     monthCount: months.length,
     total,
     privacy: PRIVACY,
-  };
+  });
 }
 
 function exportNormalized(args) {
@@ -269,16 +327,17 @@ function exportNormalized(args) {
   if (!fs.existsSync(parent) || !fs.statSync(parent).isDirectory()) {
     throw new Error("The directory for that path does not exist.");
   }
-  const body = format === "json" ? JSON.stringify(exportDocument(dataset), null, 2) : toCsv(dataset);
+  const exported = present(exportDocument(dataset));
+  const body = format === "json" ? JSON.stringify(exported, null, 2) : toCsv(exported);
   fs.writeFileSync(target, body);
-  return {
+  return present({
     path: target,
     format,
     bytes: Buffer.byteLength(body),
     readings: dataset.readings.length,
     billPeriods: dataset.billPeriods.length,
     privacy: PRIVACY,
-  };
+  });
 }
 
 function exportDocument(dataset) {
@@ -287,7 +346,7 @@ function exportDocument(dataset) {
     meters: dataset.meters,
     readings: dataset.readings,
     billPeriods: dataset.billPeriods,
-    privacy: "Customer, address, and account fields are not included.",
+    privacy: PRIVACY,
   };
 }
 
@@ -401,7 +460,7 @@ function selectReadings(dataset, args) {
   let readings = dataset.readings.slice();
   let meterId = null;
   if (args.meterId) {
-    meterId = args.meterId;
+    meterId = canonicalMeterId(dataset, args.meterId);
     const meter = dataset.meters.find((item) => item.id === meterId);
     if (!meter) throw new Error("No meter with id " + meterId + ".");
     readings = readings.filter((reading) => reading.meterId === meterId);

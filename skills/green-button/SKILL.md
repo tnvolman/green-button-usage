@@ -26,3 +26,4 @@ The file is already on disk. Do not log in, do not fetch it, and do not send it 
 - Default summaries are delivered energy. Pass `direction: "received"` for export and `direction: "net"` for delivered minus received.
 - CSV clock times without a `utc_offset` column are stored as UTC. Say so when `warnings` includes `csv-naive-time`.
 - Customer, address, and account fields are stripped. Do not repeat them even if the user can see them in the raw file.
+- A meter ID with 6 or more digits is masked in tool results (`****` plus the last 4 characters). Do not reconstruct or repeat the full meter ID from the file.
