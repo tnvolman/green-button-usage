@@ -11,30 +11,37 @@ const store = new Map();
 
 const PRIVACY =
   "In memory for this session only. Customer, address, and account fields are not included. " +
-  "A meter ID with 6 or more digits is returned as **** plus its last 4 characters.";
+  "A meter ID or usage-point ID with 6 or more digits is returned as **** plus its last 4 characters.";
 const ESTIMATE_DISCLAIMER = "Estimate only. This is not a utility bill, a tariff, or a quote from the utility.";
 const ACCOUNT_DIGIT_MIN = 6;
 
-function meterIdHasAccountNumber(id) {
+function idHasAccountNumber(id) {
   const digits = String(id).match(/\d/g);
   return Boolean(digits && digits.length >= ACCOUNT_DIGIT_MIN);
 }
 
-function maskMeterId(id) {
+function maskAccountId(id) {
   const text = String(id);
-  if (!meterIdHasAccountNumber(text)) return text;
+  if (!idHasAccountNumber(text)) return text;
   return "****" + text.slice(-4);
 }
 
-function accountMeterPairs() {
+function addAccountId(ids, id) {
+  if (id && idHasAccountNumber(id) && !ids.includes(id)) ids.push(id);
+}
+
+function accountIdPairs() {
   const ids = [];
   for (const dataset of store.values()) {
     for (const meter of dataset.meters) {
-      if (meterIdHasAccountNumber(meter.id) && !ids.includes(meter.id)) ids.push(meter.id);
+      addAccountId(ids, meter.id);
+      addAccountId(ids, meter.usagePointId);
     }
+    for (const point of dataset.usagePoints || []) addAccountId(ids, point.id);
+    for (const bill of dataset.billPeriods || []) addAccountId(ids, bill.usagePointId);
   }
   ids.sort((a, b) => b.length - a.length);
-  return ids.map((id) => [id, maskMeterId(id)]);
+  return ids.map((id) => [id, maskAccountId(id)]);
 }
 
 function scrub(value, pairs, key) {
@@ -56,16 +63,29 @@ function scrub(value, pairs, key) {
 }
 
 function present(value) {
-  return scrub(value, accountMeterPairs(), null);
+  return scrub(value, accountIdPairs(), null);
 }
 
 function canonicalMeterId(dataset, requested) {
   if (!requested) return requested;
   if (dataset.meters.some((meter) => meter.id === requested)) return requested;
-  const matches = dataset.meters.filter((meter) => maskMeterId(meter.id) === requested);
+  const matches = dataset.meters.filter((meter) => maskAccountId(meter.id) === requested);
   if (matches.length === 1) return matches[0].id;
   if (matches.length > 1) {
     throw new Error("More than one meter is returned as " + requested + ". Pass a meter ID only when it identifies one meter.");
+  }
+  return requested;
+}
+
+function canonicalUsagePointId(dataset, requested) {
+  if (!requested) return requested;
+  if (dataset.usagePoints.some((point) => point.id === requested)) return requested;
+  const matches = dataset.usagePoints.filter((point) => maskAccountId(point.id) === requested);
+  if (matches.length === 1) return matches[0].id;
+  if (matches.length > 1) {
+    throw new Error(
+      "More than one usage point is returned as " + requested + ". Pass a usage point ID only when it identifies one usage point."
+    );
   }
   return requested;
 }
@@ -474,7 +494,8 @@ function selectReadings(dataset, args) {
     readings = readings.filter((reading) => reading.meterId === meterId);
   }
   if (args.usagePointId) {
-    const point = dataset.usagePoints.find((item) => item.id === args.usagePointId);
+    const usagePointId = canonicalUsagePointId(dataset, args.usagePointId);
+    const point = dataset.usagePoints.find((item) => item.id === usagePointId);
     if (!point) throw new Error("No usage point with id " + args.usagePointId + ".");
     const ids = new Set(point.meterIds);
     readings = readings.filter((reading) => ids.has(reading.meterId));
