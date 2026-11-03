@@ -15,7 +15,8 @@ const {
   estimateCost,
   exportNormalized,
 } = require("../server/tools");
-const { feed, localTime, readingType, intervalBlock, usagePoint, meter, unix } = require("./helpers");
+const { callTool } = require("../server/greenbutton-mcp");
+const { feed, entry, localTime, readingType, intervalBlock, usagePoint, meter, unix, longUsagePointFeed } = require("./helpers");
 
 function hourReading(iso, kwh, cost) {
   return { start: unix(iso), duration: 3600, value: Math.round(kwh * 1000), cost: cost == null ? null : cost };
@@ -323,6 +324,126 @@ test("a prefixed meter id and a CSV meter column do not leak the account number"
   assert.equal(csv.meters[0].id, "****1234");
   assert.equal(listed.usagePoints[0].id.includes(csvId), false);
   assert.equal(listed.usagePoints[0].meters[0].id, "****1234");
+});
+
+test("an account number planted in a usage-point id is masked to the last 4 characters", () => {
+  const fullId = "ACCT-4417220931";
+  const xml = feed(
+    entry(
+      "urn:synthetic:UsagePoint/" + fullId,
+      "<espi:UsagePoint><espi:ServiceCategory><espi:kind>0</espi:kind></espi:ServiceCategory></espi:UsagePoint>"
+    ) +
+      localTime(0) +
+      meter("HOUSE") +
+      readingType("RT", 1, 72, 0, 3600, 840) +
+      intervalBlock([{ start: unix("2024-01-15T00:00:00Z"), duration: 3600, value: 1000, cost: 100000 }]) +
+      entry(
+        "urn:synthetic:UsageSummary/2024-01",
+        "<espi:UsageSummary><espi:billingPeriod><espi:duration>86400</espi:duration><espi:start>" +
+          unix("2024-01-15T00:00:00Z") +
+          "</espi:start></espi:billingPeriod><espi:billLastPeriod>100000</espi:billLastPeriod><espi:currency>840</espi:currency>" +
+          "<espi:overallConsumptionLastPeriod><espi:powerOfTenMultiplier>0</espi:powerOfTenMultiplier><espi:uom>72</espi:uom><espi:value>1000</espi:value></espi:overallConsumptionLastPeriod></espi:UsageSummary>"
+      )
+  );
+  assert.equal(xml.includes(fullId), true);
+  const loaded = loadGreenbutton({ xml_text: xml });
+  const listed = listUsagePoints({});
+  const byMask = usageSummary({ usagePointId: "****0931", granularity: "day" });
+  const byRaw = usageSummary({ usagePointId: fullId, granularity: "day" });
+  const peaks = peakHours({ usagePointId: "****0931", limit: 1 });
+  const compared = comparePeriods({
+    usagePointId: fullId,
+    mode: "ranges",
+    periodA: { start: "2024-01-15", end: "2024-01-15" },
+    periodB: { start: "2024-01-15", end: "2024-01-15" },
+  });
+  const cost = estimateCost({ usagePointId: "****0931" });
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "gb-mask-up-"));
+  const jsonPath = path.join(dir, "out.json");
+  const csvPath = path.join(dir, "out.csv");
+  const jsonExport = exportNormalized({ path: jsonPath, format: "json" });
+  const csvExport = exportNormalized({ path: csvPath, format: "csv" });
+  const jsonFile = fs.readFileSync(jsonPath, "utf8");
+  const csvFile = fs.readFileSync(csvPath, "utf8");
+  const outputs = [loaded, listed, byMask, byRaw, peaks, compared, cost, jsonExport, csvExport, jsonFile, csvFile];
+  const blob = JSON.stringify(outputs);
+  assert.equal(blob.includes(fullId), false);
+  assert.equal(loaded.meters[0].id, "HOUSE");
+  assert.equal(loaded.meters[0].usagePointId, "****0931");
+  assert.equal(listed.usagePoints[0].id, "****0931");
+  assert.equal(listed.usagePoints[0].meters[0].id, "HOUSE");
+  assert.equal(byMask.overall.total, 1);
+  assert.equal(byRaw.overall.total, 1);
+  assert.equal(peaks.topIntervals[0].value, 1);
+  assert.equal(compared.periodA.total, 1);
+  assert.equal(cost.meterId, null);
+  const exported = JSON.parse(jsonFile);
+  assert.equal(exported.meters[0].usagePointId, "****0931");
+  assert.equal(exported.billPeriods[0].usagePointId, "****0931");
+  assert.equal(jsonFile.includes("****0931"), true);
+  assert.equal(csvFile.includes("****0931"), true);
+  assert.equal(csvFile.includes(fullId), false);
+});
+
+test("a long unknown id is masked in usage-point and meter errors", () => {
+  const usagePointId = "ACCT-4417220931";
+  const unknownId = "ACCT-9999999999";
+  const xml = longUsagePointFeed(usagePointId);
+  assert.equal(xml.includes(usagePointId), true);
+  loadGreenbutton({ xml_text: xml });
+
+  function assertMasked(err, masked) {
+    const message = String(err && err.message);
+    assert.equal(message.includes(unknownId), false);
+    assert.equal(message.includes(usagePointId), false);
+    assert.equal(message.includes("9999999999"), false);
+    assert.equal(message.includes("4417220931"), false);
+    assert.match(message, masked);
+    return true;
+  }
+
+  assert.throws(
+    () => usageSummary({ usagePointId: unknownId, granularity: "day" }),
+    (err) => assertMasked(err, /No usage point with id \*\*\*\*9999/)
+  );
+  assert.throws(
+    () => usageSummary({ meterId: unknownId, granularity: "day" }),
+    (err) => assertMasked(err, /No meter with id \*\*\*\*9999/)
+  );
+  assert.throws(
+    () => usageSummary({ meterId: usagePointId, granularity: "day" }),
+    (err) => {
+      assert.equal(String(err.message).includes(usagePointId), false);
+      assert.equal(String(err.message).includes("4417220931"), false);
+      assert.match(err.message, /No meter with id \*\*\*\*0931/);
+      return true;
+    }
+  );
+  assert.throws(
+    () => usageSummary({ meterId: "12345", granularity: "day" }),
+    (err) => {
+      assert.match(err.message, /No meter with id 12345/);
+      return true;
+    }
+  );
+
+  const usageError = callTool({
+    name: "usage_summary",
+    arguments: { usagePointId: unknownId, granularity: "day" },
+  });
+  const meterError = callTool({
+    name: "usage_summary",
+    arguments: { meterId: unknownId, granularity: "day" },
+  });
+  const output = JSON.stringify([usageError, meterError]);
+  assert.equal(usageError.isError, true);
+  assert.equal(meterError.isError, true);
+  assert.equal(output.includes(unknownId), false);
+  assert.equal(output.includes(usagePointId), false);
+  assert.equal(output.includes("9999999999"), false);
+  assert.equal(output.includes("4417220931"), false);
+  assert.match(usageError.content[0].text, /No usage point with id \*\*\*\*9999/);
+  assert.match(meterError.content[0].text, /No meter with id \*\*\*\*9999/);
 });
 
 test("two meter ids that mask to the same value do not reveal either full id", () => {

@@ -111,7 +111,7 @@ These two calls were run on the synthetic fixture `samples/electric-hourly.xml`.
       "message": "Customer, address, and account elements were dropped and are not in the result."
     }
   ],
-  "privacy": "In memory for this session only. Customer, address, and account fields are not included. A meter ID with 6 or more digits is returned as **** plus its last 4 characters."
+  "privacy": "In memory for this session only. Customer, address, and account fields are not included. A meter ID or usage-point ID with 6 or more digits is returned as **** plus its last 4 characters."
 }
 ```
 
@@ -168,7 +168,7 @@ These two calls were run on the synthetic fixture `samples/electric-hourly.xml`.
     "percentPerDay": 39.533505
   },
   "normalization": "perDay divides the period total by the number of local calendar days in the window, so months of different lengths can be compared.",
-  "privacy": "In memory for this session only. Customer, address, and account fields are not included. A meter ID with 6 or more digits is returned as **** plus its last 4 characters."
+  "privacy": "In memory for this session only. Customer, address, and account fields are not included. A meter ID or usage-point ID with 6 or more digits is returned as **** plus its last 4 characters."
 }
 ```
 
@@ -231,8 +231,8 @@ All three samples are synthetic. They are not a customer's data. Rebuild them wi
 - File costs are used when any selected reading has one, unless `useFileCost` is false.
 - CSV support is the column map above. A file that does not match it will not parse.
 - IANA timezone names are not resolved. Without `LocalTimeParameters`, `localHour` is the UTC hour.
-- A meter ID with 6 or more digits is treated as an account number. Every tool result and export shows `****` plus the last 4 characters (`990000001234` becomes `****1234`) and does not include the rest of the ID. Warning text is masked the same way. There is no option to reveal the full ID. A meter ID with fewer than 6 digits, such as `DELIVERED` or `12345`, is returned unchanged. You may pass either the masked ID or the original ID back in; the result still shows the mask. If two meter IDs mask to the same 4 characters, passing that mask is an error and the error does not contain either full ID.
-- Usage-point IDs are returned as stored. An account number that appears only in a usage-point ID is still returned. Text that copies a masked meter ID is removed with that meter ID.
+- A meter ID with 6 or more digits is treated as an account number. Every tool result and export shows `****` plus the last 4 characters (`990000001234` becomes `****1234`) and does not include the rest of the ID. Warning text and error messages are masked the same way. There is no option to reveal the full ID. A meter ID with fewer than 6 digits, such as `DELIVERED` or `12345`, is returned unchanged. You may pass either the masked ID or the original ID back in; the result still shows the mask. If two meter IDs mask to the same 4 characters, passing that mask is an error and the error does not contain either full ID.
+- A usage-point ID with 6 or more digits is masked the same way as a meter ID. Every tool result and export shows `****` plus the last 4 characters (`ACCT-4417220931` becomes `****0931`) and does not include the rest of the ID. Warning text and error messages are masked the same way. A usage-point ID with fewer than 6 digits is returned unchanged. You may pass either the masked ID or the original ID back in; the result still shows the mask. If two usage-point IDs mask to the same 4 characters, passing that mask is an error and the error does not contain either full ID. Text that copies a masked meter ID or usage-point ID is removed with that ID.
 - The parser keeps the last path segment of a meter or usage-point id (the part after the last `:` when there is no `/`). If that segment is empty, longer than 80 characters, or contains a character other than letters, digits, and `._:-`, it substitutes `usage-point-N` or `<usage-point-id>-meter-N`. A CSV meter value that fails the same check becomes `csv-meter-N`. The original text is not kept.
 - Not every utility quirk is covered. Missing links, a missing namespace prefix, and a single resource (instead of an Atom feed) are accepted. A file that is neither ESPI nor the CSV shape above fails.
 - This repository is not submitted to a marketplace.
@@ -243,7 +243,7 @@ See [PRIVACY.md](PRIVACY.md). Results stay in memory for the session. Customer, 
 
 ## Data sources and licenses
 
-- The code, docs, and sample files in this repository are [MIT](LICENSE), copyright (c) 2026 tnvolman.
+- The code, docs, and sample files in this repository are [MIT](LICENSE), copyright (c) 2026 Michael McClanahan.
 - The three files in `samples/` are synthetic output of `scripts/build-samples.js`. The name, street, and account number in them are fake and exist so tests can prove those fields are dropped. They are not a customer's account.
 - The server reads an ESPI Atom document (`http://naesb.org/espi`) or the CSV layout above. It does not include or redistribute the NAESB ESPI standard.
 - There are no npm dependencies and no third-party runtime libraries.
