@@ -249,4 +249,4 @@ See [PRIVACY.md](PRIVACY.md). Results stay in memory for the session. Customer, 
 - There are no npm dependencies and no third-party runtime libraries.
 - This project is not a utility and is not affiliated with the Green Button Alliance, NAESB, PG&E, SCE, Con Edison, or SDG&E.
 
-Built by Michael McClanahan (@TNVOLMAN)
+Built by Michael McClanahan (@tnvolman)

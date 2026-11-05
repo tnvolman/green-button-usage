@@ -44,7 +44,7 @@ test("every mcp.json uses CURSOR_PLUGIN_ROOT for paths and cwd", () => {
 
 test("plugin.json names Michael McClanahan and the MIT license file is present", () => {
   const plugin = JSON.parse(fs.readFileSync(path.join(root, "plugin.json"), "utf8"));
-  assert.equal(plugin.author && plugin.author.name, "Michael McClanahan");
+  assert.equal(plugin.author && plugin.author.name, "Michael McClanahan (@tnvolman)");
   assert.equal(plugin.license, "MIT");
   const license = fs.readFileSync(path.join(root, "LICENSE"), "utf8");
   assert.match(license, /^MIT License\n/);
