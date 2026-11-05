@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "description": "Read a downloaded Green Button energy file locally and summarize electric, gas, or water use. No login and no network calls.",
   "author": {
-    "name": "Michael McClanahan"
+    "name": "Michael McClanahan (@tnvolman)"
   },
   "license": "MIT",
   "keywords": ["green-button", "energy", "espi", "usage", "solar"]
