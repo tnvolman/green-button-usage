@@ -46,6 +46,10 @@ To attach the same server by hand:
 
 Download the Green Button file from your utility yourself (often labeled Download My Data). Unzip a `.zip` first. This plugin never logs in and never fetches the file. An `https` href inside the XML is an identifier, not a request.
 
+## Configuration
+
+No environment variables and no API key. The server does not read the process environment. The only configuration is [`mcp.json`](mcp.json): `command` is `node` (Node.js 18 or newer on `PATH`), and `args` and `cwd` use `${CURSOR_PLUGIN_ROOT}`, which Cursor resolves to the installed plugin directory.
+
 ## Usage
 
 [`skills/green-button/SKILL.md`](skills/green-button/SKILL.md) is the instruction sheet for the agent. Load a file, then ask for a summary. Pass exactly one of `path`, `xml_text`, or `csv_text` to `load_greenbutton`.
